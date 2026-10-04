@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:async';
+import 'package:window_manager/window_manager.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:clicli_md3/services/app_updates.dart';
@@ -107,6 +109,56 @@ void main() {
     expect(find.byTooltip('已收藏'), findsOneWidget);
     expect(find.byTooltip('已追番'), findsOneWidget);
   });
+  testWidgets(
+    'close hides immediately, awaits local persistence once and then exits natively',
+    (tester) async {
+      final state = AppState(await SharedPreferences.getInstance()),
+          api = FakeApi();
+      state.bindAccount(api, storage: UiSessionStore());
+      final saved = Completer<void>();
+      final calls = <String>[];
+      const windowChannel = MethodChannel('window_manager');
+      const nativeChannel = MethodChannel('CiliCiliWinRev/window');
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        windowChannel,
+        (call) async {
+          calls.add(call.method);
+          return null;
+        },
+      );
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        nativeChannel,
+        (call) async {
+          calls.add(call.method);
+          return null;
+        },
+      );
+      addTearDown(() {
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          windowChannel,
+          null,
+        );
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          nativeChannel,
+          null,
+        );
+      });
+      await tester.pumpWidget(ClicliApp(state: state, api: api));
+      await tester.pumpAndSettle();
+      state.flushPlayback = () async {
+        calls.add('saveLocal');
+        await saved.future;
+      };
+      windowManager.listeners.last.onWindowClose();
+      windowManager.listeners.last.onWindowClose();
+      await tester.pump();
+      expect(calls, ['hide', 'saveLocal']);
+      saved.complete();
+      await tester.pumpAndSettle();
+      expect(calls, ['hide', 'saveLocal', 'exitApplication']);
+      expect(tester.takeException(), isNull);
+    },
+  );
   testWidgets(
     'startup update prompt, settings toggle and manual check work with isolated session',
     (tester) async {

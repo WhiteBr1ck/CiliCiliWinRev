@@ -21,6 +21,5 @@ $outputPath = Join-Path $workspace 'dist'
 if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed.' }
 $installerPath = Join-Path $outputPath "CiliCiliWinRev-$appVersion-windows-x64-setup.exe"
 $hash = (Get-FileHash -LiteralPath $installerPath -Algorithm SHA256).Hash.ToLowerInvariant()
-"$hash  $([IO.Path]::GetFileName($installerPath))" | Set-Content -LiteralPath "$installerPath.sha256" -Encoding utf8
 Write-Output "Installer: $installerPath"
 Write-Output "SHA256: $hash"

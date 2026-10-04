@@ -9,7 +9,7 @@ class SeasonSchedule {
   final _cache = <String, ({DateTime at, List<ScheduleEntry> items})>{};
   SeasonSchedule(this.client);
   static const headers = {
-    'User-Agent': 'CiliCiliWinRev/0.6.0 (https://clicli.blog/)',
+    'User-Agent': 'CiliCiliWinRev/0.6.1 (https://clicli.blog/)',
     'Content-Type': 'application/json',
   };
   Future<List<ScheduleEntry>> load(int year, int quarter) async {

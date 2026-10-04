@@ -26,8 +26,4 @@ foreach ($document in @('architecture.md', 'verification.md', 'THIRD_PARTY_NOTIC
 foreach ($required in @('CiliCiliWinRev.exe', 'flutter_windows.dll', 'libmpv-2.dll', 'msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll', 'data\icudtl.dat', 'data\flutter_assets\AssetManifest.bin')) {
     if (-not (Test-Path -LiteralPath (Join-Path $packagePath $required))) { throw "Package is missing $required" }
 }
-$archivePath = "$packagePath.zip"
-Compress-Archive -Path (Join-Path $packagePath '*') -DestinationPath $archivePath -Force
-$hash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
-"$hash  $([IO.Path]::GetFileName($archivePath))" | Set-Content -LiteralPath "$archivePath.sha256" -Encoding utf8
-Write-Output "Ready: $archivePath"
+Write-Output "Package directory: $packagePath"

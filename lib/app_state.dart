@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'models.dart';
 import 'services/account_session.dart';
+import 'services/account_history_sync.dart';
 import 'services/clicli_api.dart';
 import 'services/session_store.dart';
 import 'theme.dart';
@@ -10,12 +11,14 @@ import 'theme.dart';
 class AppState extends ChangeNotifier {
   Future<void> Function()? flushPlayback;
   AccountSession? account;
+  AccountHistorySync? historySync;
   void bindAccount(ClicliApi api, {SessionStore? storage}) {
     if (account != null) return;
     account = AccountSession(
       api,
       storage: storage ?? const WindowsSessionStore(),
     )..addListener(notifyListeners);
+    historySync = AccountHistorySync(api, account!, preferences);
   }
 
   final SharedPreferences preferences;

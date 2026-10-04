@@ -88,6 +88,12 @@ bool FlutterWindow::OnCreate() {
       put("monitorHeight", monitor.rcMonitor.bottom - monitor.rcMonitor.top);
       values[flutter::EncodableValue("fullscreen")] = flutter::EncodableValue(fullscreen_);
       result->Success(flutter::EncodableValue(values));
+    } else if (call.method_name() == "exitApplication") {
+      // Dart calls this only after preferences and the progress outbox are saved.
+      // WM_QUIT destroys Flutter synchronously while video callbacks may still
+      // be running. End the process without entering that teardown race.
+      result->Success();
+      PostMessage(GetHandle(), WM_APP + 0x61, 0, 0);
     } else { result->NotImplemented(); }
   });
 
@@ -117,6 +123,9 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
+  if (message == WM_APP + 0x61) {
+    ExitProcess(EXIT_SUCCESS);
+  }
   if (fullscreen_ && message == WM_NCCALCSIZE && wparam) return 0;
   // Give Flutter, including plugins, an opportunity to handle window messages.
   if (flutter_controller_) {

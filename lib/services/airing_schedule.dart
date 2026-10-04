@@ -27,7 +27,7 @@ class AiringSchedule {
             Uri.parse('https://graphql.anilist.co'),
             headers: const {
               'Content-Type': 'application/json',
-              'User-Agent': 'CiliCiliWinRev/0.6.0',
+              'User-Agent': 'CiliCiliWinRev/0.6.1',
             },
             body: jsonEncode({
               'query': query,

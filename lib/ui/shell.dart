@@ -7,6 +7,7 @@ import 'package:window_manager/window_manager.dart';
 import '../app_state.dart';
 import '../app_version.dart';
 import '../services/app_updates.dart';
+import '../services/application_exit.dart';
 import 'update_settings.dart';
 import '../models.dart';
 import '../services/clicli_api.dart';
@@ -45,6 +46,7 @@ class _AppShellState extends State<AppShell> with WindowListener {
   final pageFocus = FocusNode(debugLabel: 'shell shortcuts');
   int _generation = 0;
   String? _promptedVersion;
+  bool _closing = false;
   static const labels = ['发现', '全部番剧', '我的追番', '收藏', '观看历史', '新番时间表', '设置'];
   static const icons = [
     Icons.explore_outlined,
@@ -99,8 +101,18 @@ class _AppShellState extends State<AppShell> with WindowListener {
 
   @override
   void onWindowClose() async {
-    await widget.state.flushPlayback?.call();
-    await windowManager.destroy();
+    if (_closing) return;
+    _closing = true;
+    // Give immediate feedback while local writes and native cleanup finish.
+    await windowManager.hide();
+    try {
+      widget.state.historySync?.pause();
+      await widget.state.flushPlayback?.call();
+    } finally {
+      widget.updates?.dispose();
+      widget.api.dispose();
+      await ApplicationExit.finish();
+    }
   }
 
   Future<void> connect() async {

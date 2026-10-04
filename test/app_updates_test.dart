@@ -72,7 +72,7 @@ void main() {
         prefs,
         client: MockClient((_) async {
           requests++;
-          return http.Response(jsonEncode(release(version: '0.6.0')), 200);
+          return http.Response(jsonEncode(release(version: '0.6.1')), 200);
         }),
       );
       await updates.setAutomatic(false);

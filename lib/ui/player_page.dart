@@ -61,15 +61,17 @@ class PlayerPageState extends State<PlayerPage> {
   String error = '', danmakuError = '';
   double rate = 1, volume = 80, precisePosition = 0;
   double? seekPreview;
-  bool controlsVisible = true,
-      menuOpen = false,
-      controlsHovered = false,
-      syncing = false;
+  bool controlsVisible = true, menuOpen = false, controlsHovered = false;
   bool editorFocused = false, fullscreenBusy = false;
   List<DanmakuEntry> comments = [];
   Timer? saveTimer, hideTimer, errorTimer;
-  String historyError = '';
-  int lastSyncedPosition = -1;
+  String get historyError => widget.state.historySync?.error ?? '';
+  bool _shuttingDown = false;
+  Future<void>? _closing, _release;
+  void _historyChanged() {
+    if (mounted && !_shuttingDown) setState(() {});
+  }
+
   final focus = FocusNode();
   final danmakuComposerKey = GlobalKey();
   int get nextIndex => source.episodes.indexOf(episode) + 1;
@@ -88,7 +90,8 @@ class PlayerPageState extends State<PlayerPage> {
       ),
     );
     controller = VideoController(player);
-    widget.state.flushPlayback = save;
+    widget.state.flushPlayback = shutdown;
+    widget.state.historySync?.addListener(_historyChanged);
     subscriptions.addAll([
       player.stream.position.listen((p) {
         if (mounted) {
@@ -158,56 +161,47 @@ class PlayerPageState extends State<PlayerPage> {
     saveTimer?.cancel();
     hideTimer?.cancel();
     errorTimer?.cancel();
-    unawaited(save(notify: false));
+    if (!_shuttingDown) unawaited(save(notify: false));
     widget.state.flushPlayback = null;
+    widget.state.historySync?.removeListener(_historyChanged);
     for (final sub in subscriptions) {
       unawaited(sub.cancel());
     }
     focus.dispose();
-    unawaited(player.dispose());
+    unawaited(_releasePlayer());
     if (fullscreen) unawaited(WindowFullscreen.set(false));
     if (pinned) unawaited(windowManager.setAlwaysOnTop(false));
     super.dispose();
   }
 
-  Future<void> save({bool notify = true}) async {
+  Future<void> save({bool notify = true, bool transmit = true}) async {
     if (widget.anime.id < 0 || position <= 0 || resolving) return;
-    await widget.state.saveWatch(
-      WatchEntry(
-        widget.anime,
-        source.id,
-        episode,
-        position,
-        duration,
-        DateTime.now(),
-      ),
-      notify: notify,
+    final entry = WatchEntry(
+      widget.anime,
+      source.id,
+      episode,
+      position,
+      duration,
+      DateTime.now(),
     );
-    if (widget.api.token != null &&
-        !syncing &&
-        lastSyncedPosition != position) {
-      final entry = WatchEntry(
-        widget.anime,
-        source.id,
-        episode,
-        position,
-        duration,
-        DateTime.now(),
-      );
-      syncing = true;
-      try {
-        await widget.api
-            .saveAccountHistory(entry)
-            .timeout(const Duration(seconds: 3));
-        lastSyncedPosition = entry.position;
-        if (mounted && notify) setState(() => historyError = '');
-      } catch (e) {
-        if (mounted && notify) setState(() => historyError = '$e');
-      } finally {
-        syncing = false;
-      }
-    }
+    await widget.state.saveWatch(entry, notify: notify);
+    await widget.state.historySync?.enqueue(entry, transmit: transmit);
   }
+
+  Future<void> shutdown() => _closing ??= _shutdown();
+  Future<void> _shutdown() async {
+    _shuttingDown = true;
+    saveTimer?.cancel();
+    hideTimer?.cancel();
+    errorTimer?.cancel();
+    widget.state.historySync?.pause();
+    await save(notify: false, transmit: false);
+  }
+
+  Future<void> _releasePlayer() => _release ??= () async {
+    await Future.wait(subscriptions.map((s) => s.cancel()));
+    await player.dispose();
+  }();
 
   Future<void> load({int start = 0}) async {
     final id = ++requestId;
@@ -219,7 +213,6 @@ class PlayerPageState extends State<PlayerPage> {
       position = 0;
       precisePosition = 0;
       seekPreview = null;
-      lastSyncedPosition = -1;
       controlsVisible = true;
       duration = 0;
       _danmakuBlock = -1;

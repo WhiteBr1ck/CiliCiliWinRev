@@ -105,7 +105,7 @@ class CoverLoader {
   final _waiting = <Completer<void>>[];
   int _active = 0;
   CoverLoader(this.client, this.directory);
-  static const headers = {'User-Agent': 'CiliCiliWinRev/0.6.0 (Windows)'};
+  static const headers = {'User-Agent': 'CiliCiliWinRev/0.6.1 (Windows)'};
 
   Future<Uint8List?> load(
     String url, {
