@@ -184,6 +184,7 @@ class _AppShellState extends State<AppShell> with WindowListener {
 
   void navigate(int value) {
     _generation++;
+    if (value == 3) widget.state.resetFavoritesSelection();
     setState(() {
       destination = value;
       error = '';

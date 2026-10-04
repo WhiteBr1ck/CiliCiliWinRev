@@ -31,7 +31,10 @@ class _HistoryPageState extends State<HistoryPage> {
   @override
   void initState() {
     super.initState();
+    remote = widget.state.account?.loggedIn == true;
+    loadedToken = widget.api.token;
     widget.state.account?.addListener(sessionChanged);
+    if (remote) unawaited(load());
   }
 
   @override
@@ -43,6 +46,8 @@ class _HistoryPageState extends State<HistoryPage> {
   void sessionChanged() {
     if (!mounted) return;
     if (loadedToken != widget.api.token) {
+      loadedToken = widget.api.token;
+      remote = widget.state.account!.loggedIn;
       generation++;
       items = [];
       page = 0;

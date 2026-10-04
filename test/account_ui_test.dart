@@ -214,9 +214,6 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('本地历史'), findsOneWidget);
-    await tester.tap(find.text('账号'));
-    await tester.pumpAndSettle();
     expect(find.text('账号历史'), findsOneWidget);
     expect(
       tester
@@ -281,7 +278,6 @@ void main() {
           ),
         ),
       );
-      await tester.tap(find.text('账号'));
       await tester.pumpAndSettle();
       expect(find.textContaining('2026-10-04'), findsOneWidget);
       expect(find.textContaining('2026-10-03'), findsOneWidget);

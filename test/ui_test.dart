@@ -94,6 +94,21 @@ class CloudUiApi extends FakeApi {
   @override
   Future<void> logout() async {}
   @override
+  Future<RecordPage<AccountHistory>> accountHistory({int page = 1}) async =>
+      RecordPage([
+        AccountHistory(
+          77,
+          WatchEntry(
+            const Anime(id: 77, name: '云端历史样本'),
+            'mao',
+            '第02集',
+            87,
+            100,
+            DateTime(2026),
+          ),
+        ),
+      ], 1);
+  @override
   Future<RecordPage<Anime>> accountFavorites({int page = 1}) async {
     reads++;
     return RecordPage(
@@ -123,6 +138,86 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(WindowsUpdater.channel, (_) async => null);
   });
+  testWidgets(
+    'history and favorites default by login on entry and account changes',
+    (tester) async {
+      tester.view.physicalSize = const Size(1360, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final api = CloudUiApi();
+      final state = AppState(await SharedPreferences.getInstance());
+      await state.toggleFavorite(const Anime(id: 1, name: '本地收藏样本'));
+      await state.saveWatch(
+        WatchEntry(
+          const Anime(id: 1, name: '本地历史样本'),
+          'mao',
+          '第01集',
+          10,
+          100,
+          DateTime(2026),
+        ),
+      );
+      state.bindAccount(api, storage: UiSessionStore());
+      await tester.pumpWidget(ClicliApp(state: state, api: api));
+      await tester.pumpAndSettle();
+      Future<void> navigate(String label) async {
+        await tester.tap(find.text(label).first);
+        await tester.pumpAndSettle();
+      }
+
+      bool remoteSelected() => tester
+          .widget<SegmentedButton<bool>>(find.byType(SegmentedButton<bool>))
+          .selected
+          .single;
+      await navigate('收藏');
+      expect(remoteSelected(), false);
+      expect(find.text('本地收藏样本'), findsOneWidget);
+      await navigate('账号');
+      expect(remoteSelected(), true);
+      await navigate('发现');
+      await navigate('收藏');
+      expect(remoteSelected(), false);
+      await state.account!.signIn('fixture', 'fixture');
+      await tester.pumpAndSettle();
+      expect(remoteSelected(), true);
+      expect(find.text('云端收藏样本'), findsOneWidget);
+      await navigate('本地');
+      expect(find.text('本地收藏样本'), findsOneWidget);
+      await navigate('发现');
+      await navigate('收藏');
+      expect(remoteSelected(), true);
+      await navigate('观看历史');
+      expect(remoteSelected(), true);
+      expect(find.text('云端历史样本'), findsOneWidget);
+      await navigate('本地');
+      expect(find.text('本地历史样本'), findsOneWidget);
+      await navigate('发现');
+      await navigate('观看历史');
+      expect(remoteSelected(), true);
+      await state.account!.signOut();
+      await tester.pumpAndSettle();
+      expect(remoteSelected(), false);
+      expect(find.text('本地历史样本'), findsOneWidget);
+      await navigate('账号');
+      await navigate('发现');
+      await navigate('观看历史');
+      expect(remoteSelected(), false);
+      await state.account!.signIn('fixture', 'fixture');
+      await tester.pumpAndSettle();
+      expect(remoteSelected(), true);
+      await navigate('收藏');
+      await navigate('本地');
+      await state.account!.signOut();
+      await tester.pumpAndSettle();
+      expect(remoteSelected(), false);
+      expect(find.text('本地收藏样本'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+      state.dispose();
+      api.dispose();
+    },
+  );
   for (final size in [const Size(1360, 900), const Size(760, 580)]) {
     testWidgets(
       'cloud favorites, local isolation, remote resume and logout fit $size',

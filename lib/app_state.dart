@@ -16,6 +16,7 @@ class AppState extends ChangeNotifier {
   AccountHistorySync? historySync;
   AccountFavoritesSync? favoritesSync;
   bool? _useAccountFavorites;
+  String? _favoritesToken;
   bool get useAccountFavorites =>
       _useAccountFavorites ?? account?.loggedIn == true;
   bool get accountFavoritesSelected =>
@@ -27,12 +28,26 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void resetFavoritesSelection() {
+    _useAccountFavorites = null;
+    notifyListeners();
+  }
+
+  void _accountChanged() {
+    final token = account?.api.token;
+    if (_favoritesToken != token) {
+      _favoritesToken = token;
+      _useAccountFavorites = null;
+    }
+    notifyListeners();
+  }
+
   void bindAccount(ClicliApi api, {SessionStore? storage}) {
     if (account != null) return;
     account = AccountSession(
       api,
       storage: storage ?? const WindowsSessionStore(),
-    )..addListener(notifyListeners);
+    )..addListener(_accountChanged);
     historySync = AccountHistorySync(api, account!, preferences);
     favoritesSync = AccountFavoritesSync(api, account!)
       ..addListener(notifyListeners);
@@ -216,7 +231,7 @@ class AppState extends ChangeNotifier {
     favoritesSync?.removeListener(notifyListeners);
     favoritesSync?.dispose();
     historySync?.dispose();
-    account?.removeListener(notifyListeners);
+    account?.removeListener(_accountChanged);
     account?.dispose();
     super.dispose();
   }
