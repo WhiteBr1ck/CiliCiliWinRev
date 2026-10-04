@@ -8,6 +8,7 @@ import '../app_state.dart';
 import '../app_version.dart';
 import '../services/app_updates.dart';
 import '../services/application_exit.dart';
+import '../services/windows_updater.dart';
 import 'update_settings.dart';
 import '../models.dart';
 import '../services/clicli_api.dart';
@@ -61,6 +62,9 @@ class _AppShellState extends State<AppShell> with WindowListener {
   void initState() {
     super.initState();
     windowManager.addListener(this);
+    if (widget.updates != null) {
+      widget.updates!.download.shutdown = _closeForUpdate;
+    }
     widget.state.bindAccount(widget.api);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) pageFocus.requestFocus();
@@ -87,12 +91,13 @@ class _AppShellState extends State<AppShell> with WindowListener {
       return;
     }
     _promptedVersion = release.version;
-    unawaited(showUpdateDialog(context, release));
+    unawaited(showUpdateDialog(context, widget.updates!));
   }
 
   @override
   void dispose() {
     windowManager.removeListener(this);
+    if (widget.updates != null) widget.updates!.download.shutdown = null;
     search.dispose();
     searchFocus.dispose();
     pageFocus.dispose();
@@ -113,6 +118,32 @@ class _AppShellState extends State<AppShell> with WindowListener {
       widget.api.dispose();
       await ApplicationExit.finish();
     }
+  }
+
+  Future<void> _closeForUpdate() async {
+    if (_closing) throw const FormatException('软件正在退出，请重新打开后更新');
+    _closing = true;
+    try {
+      widget.state.historySync?.pause();
+      await widget.state.flushPlayback?.call();
+    } catch (_) {
+      _closing = false;
+      widget.state.historySync?.resume();
+      widget.state.resumePlayback?.call();
+      throw const FormatException('无法保存观看进度，更新已取消。请重试');
+    }
+    try {
+      await WindowsUpdater.commit();
+    } catch (_) {
+      _closing = false;
+      widget.state.historySync?.resume();
+      widget.state.resumePlayback?.call();
+      throw const FormatException('无法准备安装，更新已取消。请重试');
+    }
+    await windowManager.hide();
+    widget.updates?.dispose();
+    widget.api.dispose();
+    await ApplicationExit.finish();
   }
 
   Future<void> connect() async {

@@ -8,6 +8,7 @@ project(runner LANGUAGES CXX)
 # Any new source files that you add to the application should be added here.
 add_executable(${BINARY_NAME} WIN32
   "flutter_window.cpp"
+  "update_bridge.cpp"
   "main.cpp"
   "utils.cpp"
   "win32_window.cpp"
@@ -19,6 +20,7 @@ add_executable(${BINARY_NAME} WIN32
 # Apply the standard set of build settings. This can be removed for applications
 # that need different build settings.
 apply_standard_settings(${BINARY_NAME})
+target_compile_options(${BINARY_NAME} PRIVATE /utf-8)
 
 # Add preprocessor definitions for the build version.
 target_compile_definitions(${BINARY_NAME} PRIVATE "FLUTTER_VERSION=\"${FLUTTER_VERSION}\"")
@@ -35,7 +37,17 @@ target_compile_definitions(${BINARY_NAME} PRIVATE "NOMINMAX")
 target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app)
 target_link_libraries(${BINARY_NAME} PRIVATE "dwmapi.lib")
 target_link_libraries(${BINARY_NAME} PRIVATE "Crypt32.lib")
+target_link_libraries(${BINARY_NAME} PRIVATE "advapi32.lib")
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 
 # Run the Flutter tool portions of the build. This must not be removed.
 add_dependencies(${BINARY_NAME} flutter_assemble)
+
+add_executable(CiliCiliWinRevUpdater WIN32 "update_helper.cpp")
+apply_standard_settings(CiliCiliWinRevUpdater)
+target_compile_options(CiliCiliWinRevUpdater PRIVATE /utf-8)
+# Static CRT makes the helper independent of the files being replaced.
+set_property(TARGET CiliCiliWinRevUpdater PROPERTY MSVC_RUNTIME_LIBRARY
+  "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+target_compile_definitions(CiliCiliWinRevUpdater PRIVATE NOMINMAX)
+target_link_libraries(CiliCiliWinRevUpdater PRIVATE "shell32.lib" "bcrypt.lib" "version.lib")

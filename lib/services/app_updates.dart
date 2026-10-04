@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../app_version.dart';
+import 'update_download.dart';
 
 enum UpdateStatus { idle, checking, current, available, noRelease, failed }
 
@@ -11,7 +12,14 @@ class AppRelease {
   final String version;
   final Uri page, installer;
   final int size;
-  const AppRelease(this.version, this.page, this.installer, this.size);
+  final String notes;
+  const AppRelease(
+    this.version,
+    this.page,
+    this.installer,
+    this.size, {
+    this.notes = '',
+  });
 }
 
 /// Uses public GitHub metadata, with a separate client and no account headers.
@@ -19,6 +27,7 @@ class AppUpdates extends ChangeNotifier {
   final SharedPreferences preferences;
   final http.Client client;
   final String repository, currentVersion;
+  late final UpdateDownload download;
   UpdateStatus status = UpdateStatus.idle;
   AppRelease? release;
   String error = '';
@@ -29,9 +38,23 @@ class AppUpdates extends ChangeNotifier {
     http.Client? client,
     this.repository = updateRepository,
     this.currentVersion = appVersion,
-  }) : client = client ?? http.Client();
+    UpdateDownload? download,
+  }) : client = client ?? http.Client() {
+    this.download = download ?? UpdateDownload(repository: repository);
+    this.download.addListener(_notify);
+  }
 
   bool get automatic => preferences.getBool('automaticUpdates') ?? true;
+  Future<void> install() {
+    final target = release;
+    if (target == null) return Future.value();
+    return download.start(
+      version: target.version,
+      installer: target.installer,
+      size: target.size,
+    );
+  }
+
   Future<void> setAutomatic(bool value) async {
     await preferences.setBool('automaticUpdates', value);
     _notify();
@@ -52,7 +75,9 @@ class AppUpdates extends ChangeNotifier {
   }
 
   Future<void> check({bool startup = false}) {
-    if (_disposed || (startup && !automatic)) return Future.value();
+    if (_disposed || download.busy || (startup && !automatic)) {
+      return Future.value();
+    }
     return _pending ??= _check().whenComplete(() => _pending = null);
   }
 
@@ -110,15 +135,16 @@ class AppUpdates extends ChangeNotifier {
         '${matches.single['browser_download_url']}',
       );
       final page = Uri.tryParse('${data['html_url']}');
-      final prefix = '/$repository/releases/';
       if (installer == null ||
           page == null ||
           installer.scheme != 'https' ||
           installer.host != 'github.com' ||
-          !installer.path.startsWith('${prefix}download/') ||
+          installer.toString() !=
+              'https://github.com/$repository/releases/download/v$version/$expectedName' ||
           page.scheme != 'https' ||
           page.host != 'github.com' ||
-          !page.path.startsWith('${prefix}tag/')) {
+          page.toString() !=
+              'https://github.com/$repository/releases/tag/v$version') {
         throw const FormatException('更新下载地址无效');
       }
       release = AppRelease(
@@ -126,6 +152,7 @@ class AppUpdates extends ChangeNotifier {
         page,
         installer,
         matches.single['size'] is int ? matches.single['size'] : 0,
+        notes: data['body'] is String ? data['body'] : '',
       );
       status = UpdateStatus.available;
     } on TimeoutException {
@@ -163,8 +190,11 @@ class AppUpdates extends ChangeNotifier {
 
   @override
   void dispose() {
+    if (_disposed) return;
     _disposed = true;
     client.close();
+    download.removeListener(_notify);
+    download.dispose();
     super.dispose();
   }
 }

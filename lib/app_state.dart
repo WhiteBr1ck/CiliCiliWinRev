@@ -10,6 +10,7 @@ import 'theme.dart';
 
 class AppState extends ChangeNotifier {
   Future<void> Function()? flushPlayback;
+  void Function()? resumePlayback;
   AccountSession? account;
   AccountHistorySync? historySync;
   void bindAccount(ClicliApi api, {SessionStore? storage}) {

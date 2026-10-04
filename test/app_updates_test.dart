@@ -43,6 +43,7 @@ void main() {
     () async {
       final updates = AppUpdates(
         await SharedPreferences.getInstance(),
+        currentVersion: '0.6.1',
         client: MockClient((r) async {
           expect(
             r.url.toString(),
@@ -70,6 +71,7 @@ void main() {
       final prefs = await SharedPreferences.getInstance();
       final updates = AppUpdates(
         prefs,
+        currentVersion: '0.6.1',
         client: MockClient((_) async {
           requests++;
           return http.Response(jsonEncode(release(version: '0.6.1')), 200);
@@ -91,6 +93,7 @@ void main() {
       var code = 404;
       final updates = AppUpdates(
         await SharedPreferences.getInstance(),
+        currentVersion: '0.6.1',
         client: MockClient((_) async => http.Response('{}', code)),
       );
       await updates.check();
@@ -108,6 +111,7 @@ void main() {
       var data = release(asset: false);
       final updates = AppUpdates(
         await SharedPreferences.getInstance(),
+        currentVersion: '0.6.1',
         client: MockClient((_) async => http.Response(jsonEncode(data), 200)),
       );
       await updates.check();

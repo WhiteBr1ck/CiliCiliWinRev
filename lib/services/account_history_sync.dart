@@ -53,6 +53,7 @@ class AccountHistorySync extends ChangeNotifier {
   }
 
   void pause() => _paused = true;
+  void resume() => _paused = false;
 
   Future<void> enqueue(WatchEntry entry, {bool transmit = true}) async {
     final owner = _owner;

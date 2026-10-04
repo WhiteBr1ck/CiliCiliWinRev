@@ -4,6 +4,8 @@ import 'package:window_manager/window_manager.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:clicli_md3/services/app_updates.dart';
+import 'package:clicli_md3/services/windows_updater.dart';
+import 'package:clicli_md3/services/update_download.dart';
 import 'app_updates_test.dart' as update_fixture;
 import 'package:clicli_md3/app_state.dart';
 import 'package:clicli_md3/main.dart';
@@ -79,7 +81,11 @@ class UiSessionStore implements SessionStore {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  setUp(() => SharedPreferences.setMockInitialValues({}));
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(WindowsUpdater.channel, (_) async => null);
+  });
   testWidgets('favorite and follow badges use the matching icon', (
     tester,
   ) async {
@@ -169,9 +175,17 @@ void main() {
       final state = AppState(await SharedPreferences.getInstance()),
           api = FakeApi();
       state.bindAccount(api, storage: UiSessionStore());
-      var requests = 0;
+      var requests = 0, downloadRequests = 0;
       final updates = AppUpdates(
         state.preferences,
+        currentVersion: '0.6.1',
+        download: UpdateDownload(
+          repository: 'WhiteBr1ck/CiliCiliWinRev',
+          clientFactory: () => MockClient((_) async {
+            downloadRequests++;
+            return http.Response('', 503);
+          }),
+        ),
         client: MockClient((_) async {
           requests++;
           return http.Response(jsonEncode(update_fixture.release()), 200);
@@ -181,8 +195,14 @@ void main() {
         ClicliApp(state: state, api: api, updates: updates),
       );
       await tester.pumpAndSettle();
-      expect(find.text('新版本 0.7.0'), findsOneWidget);
-      expect(find.text('下载安装包'), findsOneWidget);
+      expect(find.text('立即更新'), findsOneWidget);
+      expect(updates.download.received, 0);
+      expect(downloadRequests, 0);
+      await tester.tap(find.text('立即更新'));
+      await tester.pumpAndSettle();
+      expect(downloadRequests, 1);
+      expect(find.text('重试更新'), findsOneWidget);
+      expect(find.text('更新尚未准备就绪，请稍后重试'), findsOneWidget);
       await tester.tap(find.text('稍后'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('设置'));
@@ -200,12 +220,110 @@ void main() {
       await tester.pumpAndSettle();
       expect(requests, 2);
       expect(find.text('新版本 0.7.0'), findsOneWidget);
+      await tester.tap(find.text('更新至 0.7.0'));
+      await tester.pumpAndSettle();
+      expect(find.text('重试更新'), findsOneWidget);
+      expect(updates.download.received, 0);
+      expect(downloadRequests, 1);
+      await tester.tap(find.text('稍后'));
+      await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
       updates.dispose();
       api.dispose();
     },
   );
+  for (final scenario in ['success', 'save-failure', 'commit-failure']) {
+    final saveFails = scenario == 'save-failure';
+    var commitFails = scenario == 'commit-failure';
+    testWidgets(
+      'update handoff waits for persistence and recovers: $scenario',
+      (tester) async {
+        SharedPreferences.setMockInitialValues({'automaticUpdates': false});
+        final state = AppState(await SharedPreferences.getInstance());
+        final api = FakeApi();
+        state.bindAccount(api, storage: UiSessionStore());
+        final updates = AppUpdates(state.preferences);
+        final calls = <String>[];
+        final saved = Completer<void>();
+        const windowChannel = MethodChannel('window_manager');
+        const exitChannel = MethodChannel('CiliCiliWinRev/window');
+        final messenger = tester.binding.defaultBinaryMessenger;
+        for (final channel in [
+          windowChannel,
+          exitChannel,
+          WindowsUpdater.channel,
+        ]) {
+          messenger.setMockMethodCallHandler(channel, (call) async {
+            calls.add(call.method);
+            if (call.method == 'commit' && commitFails) {
+              throw PlatformException(code: 'fixture', message: 'helper ended');
+            }
+            return null;
+          });
+        }
+        addTearDown(() {
+          for (final channel in [
+            windowChannel,
+            exitChannel,
+            WindowsUpdater.channel,
+          ]) {
+            messenger.setMockMethodCallHandler(channel, null);
+          }
+          updates.dispose();
+        });
+        await tester.pumpWidget(
+          ClicliApp(state: state, api: api, updates: updates),
+        );
+        await tester.pumpAndSettle();
+        calls.clear();
+        state.flushPlayback = () async {
+          calls.add('saveLocal');
+          await saved.future;
+        };
+        state.resumePlayback = () => calls.add('resumePlayback');
+        Object? failure;
+        final handoff = updates.download.shutdown!().catchError((Object e) {
+          failure = e;
+        });
+        await tester.pump();
+        expect(calls, ['saveLocal']);
+        if (saveFails) {
+          saved.completeError(StateError('fixture write failed'));
+        } else {
+          saved.complete();
+        }
+        await tester.pumpAndSettle();
+        await handoff;
+        if (saveFails || commitFails) {
+          expect(calls, [
+            'saveLocal',
+            if (commitFails) 'commit',
+            'resumePlayback',
+          ]);
+          expect(failure, isA<FormatException>());
+          commitFails = false;
+          state.flushPlayback = () async {
+            calls.add('retrySave');
+          };
+          await updates.download.shutdown!();
+          expect(calls, [
+            'saveLocal',
+            if (scenario == 'commit-failure') 'commit',
+            'resumePlayback',
+            'retrySave',
+            'commit',
+            'hide',
+            'exitApplication',
+          ]);
+        } else {
+          expect(calls, ['saveLocal', 'commit', 'hide', 'exitApplication']);
+        }
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+  }
   for (final size in [const Size(1360, 900), const Size(760, 580)]) {
     testWidgets('home, search, settings and library fit $size', (tester) async {
       tester.view.physicalSize = size;

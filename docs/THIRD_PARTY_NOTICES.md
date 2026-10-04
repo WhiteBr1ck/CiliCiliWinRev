@@ -1,5 +1,7 @@
 # Third-party notices
 
+Update downloads use Dart's crypto (BSD-3-Clause) and cryptography (Apache-2.0) packages for SHA256 and Ed25519 verification. Their license notices are included in Flutter's generated license registry. Publisher tooling uses the official WinSparkle 0.9.4 signing utility, https://github.com/vslavik/winsparkle/releases/tag/v0.9.4, under its MIT-style license. The application does not bundle the WinSparkle runtime or its native update dialogs.
+
 CiliCiliWinRev is an independent Flutter Windows client. It is not an official CLICLI release.
 
 The catalog, playback information and danmaku are served by CLICLI. This implementation was verified against the HTTP protocol of the user-provided CLICLI Windows 1.1.5 application. That application declares an MIT license in its bundled package.json. The original application binaries and UI code are not included in this distribution.

@@ -49,3 +49,7 @@ app.*.map.json
 /*.exe
 /.research/
 /dist/
+
+# Update signing secrets never belong in source control.
+*.pem
+*.dpapi

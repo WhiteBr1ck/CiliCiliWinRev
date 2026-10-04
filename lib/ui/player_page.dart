@@ -91,6 +91,7 @@ class PlayerPageState extends State<PlayerPage> {
     );
     controller = VideoController(player);
     widget.state.flushPlayback = shutdown;
+    widget.state.resumePlayback = resumeAfterFailedShutdown;
     widget.state.historySync?.addListener(_historyChanged);
     subscriptions.addAll([
       player.stream.position.listen((p) {
@@ -163,6 +164,7 @@ class PlayerPageState extends State<PlayerPage> {
     errorTimer?.cancel();
     if (!_shuttingDown) unawaited(save(notify: false));
     widget.state.flushPlayback = null;
+    widget.state.resumePlayback = null;
     widget.state.historySync?.removeListener(_historyChanged);
     for (final sub in subscriptions) {
       unawaited(sub.cancel());
@@ -195,7 +197,26 @@ class PlayerPageState extends State<PlayerPage> {
     hideTimer?.cancel();
     errorTimer?.cancel();
     widget.state.historySync?.pause();
-    await save(notify: false, transmit: false);
+    try {
+      await save(notify: false, transmit: false);
+    } catch (_) {
+      resumeAfterFailedShutdown();
+      rethrow;
+    }
+  }
+
+  void resumeAfterFailedShutdown() {
+    _shuttingDown = false;
+    _closing = null;
+    widget.state.historySync?.resume();
+    if (mounted) {
+      saveTimer?.cancel();
+      saveTimer = Timer.periodic(
+        const Duration(seconds: 10),
+        (_) => unawaited(save()),
+      );
+      revealControls();
+    }
   }
 
   Future<void> _releasePlayer() => _release ??= () async {

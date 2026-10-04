@@ -5,6 +5,7 @@
 #include <flutter/standard_method_codec.h>
 
 #include "flutter/generated_plugin_registrant.h"
+#include "update_bridge.h"
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -27,6 +28,39 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+  update_channel_ = std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+      flutter_controller_->engine()->messenger(), "CiliCiliWinRev/updater",
+      &flutter::StandardMethodCodec::GetInstance());
+  update_channel_->SetMethodCallHandler([this](
+      const flutter::MethodCall<flutter::EncodableValue>& call,
+      std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+    if (call.method_name() == "validate") {
+      std::string error;
+      if (ValidateWindowsUpdate(error)) result->Success();
+      else result->Error("UPDATE", error);
+    } else if (call.method_name() == "prepare") {
+      const auto* values = call.arguments() ? std::get_if<flutter::EncodableMap>(call.arguments()) : nullptr;
+      const auto get = [values](const char* name) -> std::wstring {
+        if (!values) return L"";
+        const auto found = values->find(flutter::EncodableValue(name));
+        if (found == values->end()) return L"";
+        const auto* value = std::get_if<std::string>(&found->second);
+        if (!value) return L"";
+        const int length = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value->data(), static_cast<int>(value->size()), nullptr, 0);
+        std::wstring wide(length, 0);
+        if (length) MultiByteToWideChar(CP_UTF8, 0, value->data(), static_cast<int>(value->size()), wide.data(), length);
+        return wide;
+      };
+      std::string error;
+      if (PrepareWindowsUpdate(get("installer"), get("sha256"), get("version"), error)) result->Success();
+      else result->Error("UPDATE", error);
+    } else if (call.method_name() == "commit") {
+      if (AuthorizeUpdateExit()) result->Success();
+      else result->Error("UPDATE", "更新安装已取消，请重试");
+    } else if (call.method_name() == "cancel") {
+      CancelWindowsUpdate(); result->Success();
+    } else result->NotImplemented();
+  });
   session_channel_ = std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
       flutter_controller_->engine()->messenger(), "CiliCiliWinRev/session",
       &flutter::StandardMethodCodec::GetInstance());
@@ -110,6 +144,8 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  CancelWindowsUpdate();
+  update_channel_ = nullptr;
   window_channel_ = nullptr;
   session_channel_ = nullptr;
   if (flutter_controller_) {
