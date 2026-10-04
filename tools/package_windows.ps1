@@ -25,7 +25,7 @@ Copy-Item -LiteralPath (Join-Path $workspace 'README.md') -Destination $packageP
 Copy-Item -LiteralPath (Join-Path $workspace 'docs\THIRD_PARTY_NOTICES.md') -Destination $packagePath -Force
 $packageDocs = Join-Path $packagePath 'docs'
 New-Item -ItemType Directory -Path $packageDocs -Force | Out-Null
-foreach ($document in @('architecture.md', 'verification.md', 'THIRD_PARTY_NOTICES.md', 'updates.md')) {
+foreach ($document in @('architecture.md', 'verification.md', 'THIRD_PARTY_NOTICES.md', 'updates.md', 'account-sync.md')) {
     Copy-Item -LiteralPath (Join-Path $workspace "docs\$document") -Destination $packageDocs -Force
 }
 foreach ($required in @('CiliCiliWinRev.exe', 'CiliCiliWinRevUpdater.exe', 'flutter_windows.dll', 'libmpv-2.dll', 'msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll', 'data\icudtl.dat', 'data\flutter_assets\AssetManifest.bin')) {

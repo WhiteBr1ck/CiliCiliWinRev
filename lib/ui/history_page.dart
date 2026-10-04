@@ -66,6 +66,10 @@ class _HistoryPageState extends State<HistoryPage> {
       error = '';
     });
     try {
+      if (!more) await widget.state.historySync?.flush();
+      if (!mounted || id != generation || loadedToken != widget.api.token) {
+        return;
+      }
       final result = await widget.api.accountHistory(page: target);
       if (mounted && id == generation) {
         setState(() {
@@ -113,8 +117,9 @@ class _HistoryPageState extends State<HistoryPage> {
   Future<void> remove(WatchEntry entry) async {
     try {
       if (remote) {
-        await widget.api.deleteAccountHistory(entry.anime.id);
-        if (mounted) await load();
+        final token = widget.api.token;
+        await widget.state.historySync!.delete(entry.anime.id);
+        if (mounted && token == widget.api.token) await load();
       } else {
         await widget.state.removeWatch(entry.anime.id);
         if (mounted) setState(() {});

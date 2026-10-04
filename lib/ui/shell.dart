@@ -191,6 +191,9 @@ class _AppShellState extends State<AppShell> with WindowListener {
       search.clear();
     });
     if (value == 1) unawaited(loadCatalog());
+    if (value == 3 && widget.state.account?.loggedIn == true) {
+      unawaited(widget.state.favoritesSync!.refresh());
+    }
   }
 
   Future<void> loadCatalog({bool more = false}) async {
@@ -886,7 +889,7 @@ class _AppShellState extends State<AppShell> with WindowListener {
           saved: widget.state.following.containsKey(items[i].id),
           favorite:
               destination != 2 &&
-              widget.state.favorites.containsKey(items[i].id),
+              widget.state.visibleFavorites.containsKey(items[i].id),
         ),
       );
     },
@@ -1034,6 +1037,7 @@ class _AppShellState extends State<AppShell> with WindowListener {
     ),
   );
   Widget _library() {
+    if (destination == 3) return _favorites();
     final items =
         (destination == 2 ? widget.state.following : widget.state.favorites)
             .values
@@ -1051,6 +1055,87 @@ class _AppShellState extends State<AppShell> with WindowListener {
     return ListView(
       padding: const EdgeInsets.fromLTRB(30, 10, 30, 30),
       children: [SectionTitle(labels[destination]), _grid(items)],
+    );
+  }
+
+  Widget _favorites() {
+    final state = widget.state, sync = widget.state.favoritesSync!;
+    final remote = state.useAccountFavorites;
+    final loggedIn = state.account!.loggedIn;
+    final items = (remote ? sync.items : state.favorites).values.toList();
+    Widget content;
+    if (remote && !loggedIn) {
+      content = Center(
+        child: FilledButton.tonalIcon(
+          onPressed: () => showAccountDialog(context, state.account!),
+          icon: const Icon(Icons.login_rounded),
+          label: const Text('登录'),
+        ),
+      );
+    } else if (remote && sync.loading && !sync.loaded) {
+      content = const Center(child: CircularProgressIndicator());
+    } else if (remote && sync.error.isNotEmpty && !sync.loaded) {
+      content = ErrorView(message: sync.error, onRetry: sync.refresh);
+    } else if (items.isEmpty) {
+      content = const EmptyView(
+        icon: Icons.favorite_border_rounded,
+        title: '暂无收藏',
+      );
+    } else {
+      content = ListView(
+        padding: const EdgeInsets.fromLTRB(30, 10, 30, 30),
+        children: [_grid(remote ? items : items.reversed.toList())],
+      );
+    }
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(30, 12, 30, 20),
+          child: Row(
+            children: [
+              SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment(
+                    value: false,
+                    icon: Icon(Icons.computer_outlined),
+                    label: Text('本地'),
+                  ),
+                  ButtonSegment(
+                    value: true,
+                    icon: Icon(Icons.account_circle_outlined),
+                    label: Text('账号'),
+                  ),
+                ],
+                selected: {remote},
+                onSelectionChanged: (s) {
+                  state.selectFavorites(s.first);
+                  if (s.first) unawaited(sync.refresh());
+                },
+              ),
+              const Spacer(),
+              if (remote)
+                IconButton(
+                  tooltip: '刷新账号收藏',
+                  onPressed: loggedIn && !sync.busy ? sync.refresh : null,
+                  icon: const Icon(Icons.refresh_rounded),
+                ),
+            ],
+          ),
+        ),
+        if (remote && sync.loading && sync.loaded)
+          const LinearProgressIndicator(),
+        if (remote && sync.loaded && sync.error.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 30),
+            child: Row(
+              children: [
+                Expanded(child: Text(sync.error)),
+                TextButton(onPressed: sync.refresh, child: const Text('重试')),
+              ],
+            ),
+          ),
+        Expanded(child: content),
+      ],
     );
   }
 

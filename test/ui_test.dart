@@ -79,6 +79,43 @@ class UiSessionStore implements SessionStore {
   }
 }
 
+class CloudUiApi extends FakeApi {
+  bool collected = true;
+  int reads = 0;
+  @override
+  Future<Map<String, dynamic>> login(String account, String password) async => {
+    'token': 'fixture',
+  };
+  @override
+  Future<Map<String, dynamic>> userInfo() async => {
+    'id': 11,
+    'user_name': '测试账号',
+  };
+  @override
+  Future<void> logout() async {}
+  @override
+  Future<RecordPage<Anime>> accountFavorites({int page = 1}) async {
+    reads++;
+    return RecordPage(
+      collected ? [const Anime(id: 77, name: '云端收藏样本')] : [],
+      collected ? 1 : 0,
+    );
+  }
+
+  @override
+  Future<void> setAccountFavorite(int id, {required bool collected}) async {
+    this.collected = collected;
+  }
+
+  @override
+  Future<Anime> detail(int id) async => Anime(
+    id: 77,
+    name: '云端收藏样本',
+    sources: sample.sources,
+    accountResume: const AccountResume('mao', '第02集', 87, 100, null),
+  );
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() {
@@ -86,6 +123,53 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(WindowsUpdater.channel, (_) async => null);
   });
+  for (final size in [const Size(1360, 900), const Size(760, 580)]) {
+    testWidgets(
+      'cloud favorites, local isolation, remote resume and logout fit $size',
+      (tester) async {
+        tester.view.physicalSize = size;
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final api = CloudUiApi();
+        final state = AppState(await SharedPreferences.getInstance());
+        await state.toggleFavorite(const Anime(id: 1, name: '本地收藏样本'));
+        state.bindAccount(api, storage: UiSessionStore());
+        await tester.pumpWidget(ClicliApp(state: state, api: api));
+        await tester.pumpAndSettle();
+        await state.account!.signIn('fixture', 'fixture');
+        await tester.pumpAndSettle();
+        expect(state.favoritesSync!.items.keys, [77]);
+        await tester.tap(find.text('收藏'));
+        await tester.pumpAndSettle();
+        expect(find.text('云端收藏样本'), findsOneWidget);
+        expect(find.text('本地收藏样本'), findsNothing);
+        await tester.tap(find.text('本地'));
+        await tester.pumpAndSettle();
+        expect(find.text('本地收藏样本'), findsOneWidget);
+        await tester.tap(find.text('账号'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('云端收藏样本'));
+        await tester.pumpAndSettle();
+        expect(find.text('已收藏'), findsOneWidget);
+        expect(find.text('继续观看'), findsOneWidget);
+        expect(find.text('上次看到 第02集 · 01:27'), findsOneWidget);
+        await tester.tap(find.text('已收藏'));
+        await tester.pumpAndSettle();
+        expect(api.collected, false);
+        expect(state.favorites.keys, [1]);
+        expect(find.text('收藏'), findsOneWidget);
+        await state.account!.signOut();
+        await tester.pumpAndSettle();
+        expect(state.favoritesSync!.items, isEmpty);
+        expect(find.text('上次看到 第02集 · 01:27'), findsNothing);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox());
+        state.dispose();
+        api.dispose();
+      },
+    );
+  }
   testWidgets('favorite and follow badges use the matching icon', (
     tester,
   ) async {

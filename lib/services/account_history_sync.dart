@@ -14,6 +14,7 @@ class AccountHistorySync extends ChangeNotifier {
   final SharedPreferences preferences;
   final _pending = <String, ({String account, WatchEntry entry})>{};
   final _confirmed = <String, int>{};
+  final _deleting = <String>{};
   Future<void> _writes = Future.value();
   Future<void>? _draining;
   bool _paused = false, _disposed = false;
@@ -39,17 +40,36 @@ class AccountHistorySync extends ChangeNotifier {
   }
 
   String? get _owner {
-    final token = api.token;
-    return token == null || token.isEmpty
-        ? null
-        : sha256.convert(utf8.encode(token)).toString();
+    return account.syncOwner;
   }
 
   String _key(String owner, WatchEntry entry) =>
       '$owner|${entry.anime.id}|${entry.source}|${entry.episode}';
   int get pendingCount => _pending.length;
   void _accountChanged() {
-    if (account.loggedIn) unawaited(flush());
+    if (!account.loggedIn) return;
+    final tokenOwner = sha256.convert(utf8.encode(api.token!)).toString();
+    final owner = _owner!;
+    if (owner != tokenOwner) {
+      // Upgrade only entries proven to belong to the currently restored token.
+      final legacy = _pending.entries
+          .where((e) => e.value.account == tokenOwner)
+          .toList();
+      for (final row in legacy) {
+        _pending.remove(row.key);
+        final key = _key(owner, row.value.entry);
+        final existing = _pending[key]?.entry;
+        final entry = row.value.entry;
+        if (existing == null ||
+            (entry.updated ?? DateTime(1970)).isAfter(
+              existing.updated ?? DateTime(1970),
+            )) {
+          _pending[key] = (account: owner, entry: entry);
+        }
+      }
+      if (legacy.isNotEmpty) unawaited(_persist());
+    }
+    unawaited(flush());
   }
 
   void pause() => _paused = true;
@@ -63,6 +83,7 @@ class AccountHistorySync extends ChangeNotifier {
         entry.position <= 0) {
       return;
     }
+    if (_deleting.contains('$owner|${entry.anime.id}')) return;
     final key = _key(owner, entry);
     if (_pending[key]?.entry.position == entry.position) {
       await _writes;
@@ -102,13 +123,17 @@ class AccountHistorySync extends ChangeNotifier {
   Future<void> _drain() async {
     while (!_paused && !_disposed) {
       final owner = _owner;
-      final rows = _pending.entries.where((e) => e.value.account == owner);
+      final rows = _pending.entries.where(
+        (e) =>
+            e.value.account == owner &&
+            !_deleting.contains('$owner|${e.value.entry.anime.id}'),
+      );
       if (owner == null || rows.isEmpty) return;
       final row = rows.first;
       try {
-        await api
-            .saveAccountHistory(row.value.entry)
-            .timeout(const Duration(seconds: 3));
+        // Do not abandon a live write after a shorter wrapper timeout: it could
+        // arrive after a newer progress write or a history deletion.
+        await api.saveAccountHistory(row.value.entry);
         if (_disposed) return;
         _confirmed[row.key] = row.value.entry.position;
         while (_confirmed.length > 50) {
@@ -122,11 +147,48 @@ class AccountHistorySync extends ChangeNotifier {
         error = '';
       } catch (e) {
         if (_disposed) return;
+        if (_owner != owner) continue;
         error = '$e';
         _notify();
         return;
       }
       _notify();
+    }
+  }
+
+  WatchEntry? pendingFor(int video) {
+    final entries =
+        _pending.values
+            .where((r) => r.account == _owner && r.entry.anime.id == video)
+            .map((r) => r.entry)
+            .toList()
+          ..sort(
+            (a, b) => (b.updated ?? DateTime(1970)).compareTo(
+              a.updated ?? DateTime(1970),
+            ),
+          );
+    return entries.firstOrNull;
+  }
+
+  Future<void> delete(int video) async {
+    final owner = _owner, token = api.token;
+    if (owner == null) throw const ApiException('请先登录');
+    final key = '$owner|$video';
+    if (!_deleting.add(key)) return;
+    try {
+      // Finish any earlier write before deleting, so it cannot recreate the row.
+      await _draining;
+      if (_disposed || token != api.token) {
+        throw const ApiException('账号已切换，请重试');
+      }
+      await api.deleteAccountHistory(video);
+      _pending.removeWhere(
+        (k, row) => row.account == owner && row.entry.anime.id == video,
+      );
+      _confirmed.removeWhere((k, _) => k.startsWith('$owner|$video|'));
+      await _persist();
+    } finally {
+      _deleting.remove(key);
     }
   }
 

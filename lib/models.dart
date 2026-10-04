@@ -26,6 +26,7 @@ class Anime {
   final double? score;
   final List<PlaySource> sources;
   final bool isFinished;
+  final AccountResume? accountResume;
   const Anime({
     required this.id,
     required this.name,
@@ -42,6 +43,7 @@ class Anime {
     this.score,
     this.sources = const [],
     this.isFinished = false,
+    this.accountResume,
   });
 
   factory Anime.fromJson(Map<String, dynamic> j) => Anime(
@@ -58,6 +60,7 @@ class Anime {
     director: cleanText(j['director']),
     actors: cleanText(j['actor']),
     isFinished: number(j['isend']) == 1,
+    accountResume: AccountResume.parse(j['history']),
     score: double.tryParse('${j['gold']}'),
     sources: (j['parts'] as List? ?? [])
         .map((s) => PlaySource.fromJson(Map<String, dynamic>.from(s)))
@@ -86,6 +89,36 @@ class Anime {
     area,
     genres.split(RegExp(r'[,， ]')).firstOrNull ?? '',
   ].where((s) => s.isNotEmpty).join(' · ');
+}
+
+class AccountResume {
+  final String source, episode;
+  final int position, duration;
+  final DateTime? updated;
+  const AccountResume(
+    this.source,
+    this.episode,
+    this.position,
+    this.duration,
+    this.updated,
+  );
+  static AccountResume? parse(Object? value) {
+    if (value is! Map) return null;
+    final source = '${value['player'] ?? value['play'] ?? ''}';
+    final episode = '${value['part'] ?? ''}';
+    if (source.isEmpty || episode.isEmpty) return null;
+    return AccountResume(
+      source,
+      episode,
+      number(value['time_point']).clamp(0, 1 << 31),
+      number(value['duration']),
+      parseWatchDate(value['updated_at']) ??
+          parseWatchDate(value['created_at']),
+    );
+  }
+
+  WatchEntry entry(Anime anime) =>
+      WatchEntry(anime, source, episode, position, duration, updated);
 }
 
 class RecordPage<T> {

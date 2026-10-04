@@ -107,3 +107,11 @@
 字体使用内置矢量轮廓与真实字重，保留 DPI 缩放。Flutter 使用自己的抗锯齿栅格化；本版本没有开启 Windows ClearType 的虚假声明，也未在每种显示器和缩放比例上测量视觉效果。
 
 当前服务的 /app/agreement 实测返回 code 800101。协议入口会显示服务器错误，不展示虚构协议。
+
+## 0.7.2 账号同步
+
+对照用户提供的原版 1.1.5 客户端，确认账号收藏协议为 GET、POST、DELETE /pc/collect，影片详情的账号续播使用 history.player、history.part、history.time_point。原版只有一个账号收藏接口，没有独立追番接口。其余同步项目及未实现页面见 account-sync.md。
+
+0.7.2 的 flutter analyze 无问题，98 项单元及界面测试全部通过，Windows Release 构建及安装包编译成功。模拟测试覆盖收藏全部分页及分页重叠、缺失 total、重复页和中途失败，登录恢复、账号切换、会话失效、添加及取消收藏、失败重试、本地与账号隔离；还覆盖新 token 恢复同一账号进度、旧队列迁移、删除历史与在途写入的顺序、旧账号资料和 VIP 响应拒绝，以及详情账号续播。
+
+Windows 实际窗口的 integration_test/account_sync_smoke_test.dart 通过，使用内存 SessionStore 和模拟偏好、模拟账号 API，验证本地及账号收藏切换、详情续播、取消账号收藏不改变本地收藏、退出登录后清理账号状态。正常窗口和 760×580 窗口测试均未报告布局溢出，并人工查看 docs/screenshots/account-favorites-0.7.2.png、account-favorites-narrow-0.7.2.png 和 account-resume-0.7.2.png。没有读取日常账号会话、修改真实账号收藏或历史，因此真实账号导入数量及线上写入仍由用户登录后验证。

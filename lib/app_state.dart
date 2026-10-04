@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'models.dart';
 import 'services/account_session.dart';
 import 'services/account_history_sync.dart';
+import 'services/account_favorites_sync.dart';
 import 'services/clicli_api.dart';
 import 'services/session_store.dart';
 import 'theme.dart';
@@ -13,6 +14,19 @@ class AppState extends ChangeNotifier {
   void Function()? resumePlayback;
   AccountSession? account;
   AccountHistorySync? historySync;
+  AccountFavoritesSync? favoritesSync;
+  bool? _useAccountFavorites;
+  bool get useAccountFavorites =>
+      _useAccountFavorites ?? account?.loggedIn == true;
+  bool get accountFavoritesSelected =>
+      useAccountFavorites && account?.loggedIn == true;
+  Map<int, Anime> get visibleFavorites =>
+      accountFavoritesSelected ? favoritesSync!.items : favorites;
+  void selectFavorites(bool remote) {
+    _useAccountFavorites = remote;
+    notifyListeners();
+  }
+
   void bindAccount(ClicliApi api, {SessionStore? storage}) {
     if (account != null) return;
     account = AccountSession(
@@ -20,6 +34,8 @@ class AppState extends ChangeNotifier {
       storage: storage ?? const WindowsSessionStore(),
     )..addListener(notifyListeners);
     historySync = AccountHistorySync(api, account!, preferences);
+    favoritesSync = AccountFavoritesSync(api, account!)
+      ..addListener(notifyListeners);
   }
 
   final SharedPreferences preferences;
@@ -148,6 +164,10 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> toggleFavorite(Anime a, {bool follow = false}) async {
+    if (!follow && accountFavoritesSelected) {
+      await favoritesSync!.toggle(a);
+      return;
+    }
     final map = follow ? following : favorites;
     map.containsKey(a.id) ? map.remove(a.id) : map[a.id] = a;
     notifyListeners();
@@ -189,5 +209,15 @@ class AppState extends ChangeNotifier {
     history.clear();
     notifyListeners();
     await preferences.remove('history');
+  }
+
+  @override
+  void dispose() {
+    favoritesSync?.removeListener(notifyListeners);
+    favoritesSync?.dispose();
+    historySync?.dispose();
+    account?.removeListener(notifyListeners);
+    account?.dispose();
+    super.dispose();
   }
 }

@@ -1,2 +1,2 @@
-const appVersion = '0.7.1';
+const appVersion = '0.7.2';
 const updateRepository = 'WhiteBr1ck/CiliCiliWinRev';

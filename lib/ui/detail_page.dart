@@ -30,37 +30,93 @@ class _DetailPageState extends State<DetailPage> {
   String error = '';
   int source = 0;
   bool expanded = false;
+  int generation = 0;
+  String? loadedToken;
+  String? detailToken, openedToken;
+  bool played = false;
+  String? playedToken;
+  WatchEntry? get lastWatch {
+    final a = detail ?? widget.anime;
+    if (!played && widget.resume != null && openedToken == widget.api.token) {
+      return widget.resume;
+    }
+    final local = widget.state.history[a.id];
+    if (played && playedToken == widget.api.token && local != null) {
+      return local;
+    }
+    final loggedIn = widget.state.account?.loggedIn == true;
+    final remote = loggedIn && detailToken == widget.api.token
+        ? detail?.accountResume?.entry(a)
+        : null;
+    final pending = loggedIn
+        ? widget.state.historySync?.pendingFor(a.id)
+        : null;
+    if (pending != null) return pending;
+    if (remote == null) return local;
+    return remote;
+  }
+
   @override
   void initState() {
     super.initState();
+    openedToken = widget.api.token;
+    widget.state.addListener(stateChanged);
     unawaited(load());
+  }
+
+  void stateChanged() {
+    if (!mounted) return;
+    if (loadedToken != widget.api.token) {
+      unawaited(load());
+    } else {
+      setState(() {});
+    }
+  }
+
+  Future<void> toggleFavorite(Anime anime, {bool follow = false}) async {
+    try {
+      await widget.state.toggleFavorite(anime, follow: follow);
+      if (mounted) setState(() {});
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('$e')));
+      }
+    }
   }
 
   @override
   void dispose() {
+    widget.state.removeListener(stateChanged);
     pageFocus.dispose();
     super.dispose();
   }
 
   Future<void> load() async {
+    final id = ++generation;
+    loadedToken = widget.api.token;
+    final token = loadedToken;
     setState(() => error = '');
     try {
       final a = await widget.api.detail(widget.anime.id);
-      if (!mounted) return;
-      final last = widget.resume ?? widget.state.history[a.id];
+      if (!mounted || id != generation || token != widget.api.token) return;
       setState(() {
         detail = a;
+        detailToken = token;
+        final last = lastWatch;
         final index = a.sources.indexWhere((s) => s.id == last?.source);
         source = index < 0 ? 0 : index;
       });
     } catch (e) {
-      if (mounted) setState(() => error = '$e');
+      if (mounted && id == generation) setState(() => error = '$e');
     }
   }
 
   Future<void> play(String episode, {int position = 0}) async {
     final a = detail;
     if (a == null || a.sources.isEmpty) return;
+    final token = widget.api.token;
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => PlayerPage(
@@ -74,7 +130,9 @@ class _DetailPageState extends State<DetailPage> {
       ),
     );
     if (mounted) {
-      setState(() {});
+      played = true;
+      playedToken = token;
+      unawaited(load());
       pageFocus.requestFocus();
     }
   }
@@ -82,7 +140,7 @@ class _DetailPageState extends State<DetailPage> {
   @override
   Widget build(BuildContext context) {
     final c = Theme.of(context).colorScheme, a = detail ?? widget.anime;
-    final last = widget.resume ?? widget.state.history[a.id];
+    final last = lastWatch;
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.escape): () =>
@@ -270,11 +328,10 @@ class _DetailPageState extends State<DetailPage> {
                                                 ),
                                               ),
                                               OutlinedButton.icon(
-                                                onPressed: () =>
-                                                    widget.state.toggleFavorite(
-                                                      a,
-                                                      follow: true,
-                                                    ),
+                                                onPressed: () => toggleFavorite(
+                                                  a,
+                                                  follow: true,
+                                                ),
                                                 icon: Icon(
                                                   widget.state.following
                                                           .containsKey(a.id)
@@ -291,10 +348,18 @@ class _DetailPageState extends State<DetailPage> {
                                                 ),
                                               ),
                                               OutlinedButton.icon(
-                                                onPressed: () => widget.state
-                                                    .toggleFavorite(a),
+                                                onPressed:
+                                                    widget
+                                                            .state
+                                                            .accountFavoritesSelected &&
+                                                        widget
+                                                            .state
+                                                            .favoritesSync!
+                                                            .busy
+                                                    ? null
+                                                    : () => toggleFavorite(a),
                                                 icon: Icon(
-                                                  widget.state.favorites
+                                                  widget.state.visibleFavorites
                                                           .containsKey(a.id)
                                                       ? Icons.favorite_rounded
                                                       : Icons
@@ -302,7 +367,7 @@ class _DetailPageState extends State<DetailPage> {
                                                   size: 19,
                                                 ),
                                                 label: Text(
-                                                  widget.state.favorites
+                                                  widget.state.visibleFavorites
                                                           .containsKey(a.id)
                                                       ? '已收藏'
                                                       : '收藏',

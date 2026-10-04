@@ -314,18 +314,42 @@ class ClicliApi {
         ))['data'],
       );
   Future<Map<String, dynamic>> userInfo() async {
+    final requestedToken = token;
     final data = Map<String, dynamic>.from(
       (await request('/pc/users/info'))['data'],
     );
-    vipChannels = (data['vips'] as List? ?? [])
-        .whereType<Map>()
-        .map((v) => number(v['vip_channel']))
-        .toSet();
+    if (requestedToken == token) {
+      vipChannels = (data['vips'] as List? ?? [])
+          .whereType<Map>()
+          .map((v) => number(v['vip_channel']))
+          .toSet();
+    }
     return data;
   }
 
   Future<void> logout() async {
     await request('/pc/users/logout', method: 'POST');
+  }
+
+  Future<RecordPage<Anime>> accountFavorites({int page = 1}) async {
+    final data = (await request(
+      '/pc/collect',
+      query: {'page': '$page', 'limit': '24'},
+    ))['data'];
+    return RecordPage(
+      (data['items'] as List? ?? [])
+          .map((j) => Anime.fromJson(Map<String, dynamic>.from(j)))
+          .toList(),
+      number(data['total']),
+    );
+  }
+
+  Future<void> setAccountFavorite(int id, {required bool collected}) async {
+    await request(
+      '/pc/collect',
+      method: collected ? 'POST' : 'DELETE',
+      body: {'vid': id},
+    );
   }
 
   Future<void> register({

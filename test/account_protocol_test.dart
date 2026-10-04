@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:clicli_md3/models.dart';
 import 'package:clicli_md3/services/clicli_api.dart';
 import 'package:encrypt/encrypt.dart' as enc;
@@ -24,6 +25,109 @@ Map<String, dynamic> decryptRequest(String body) {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test(
+    'a late user-info reply cannot overwrite the new token VIP permissions',
+    () async {
+      final response = Completer<http.Response>();
+      final api = ClicliApi(client: MockClient((_) => response.future))
+        ..host = 'https://example.com'
+        ..token = 'alice';
+      await api.loadProtocol();
+      final old = api.userInfo();
+      api.token = 'bob';
+      api.vipChannels = {2};
+      response.complete(
+        http.Response(
+          jsonEncode({
+            'code': 20000,
+            'data': {
+              'id': 1,
+              'vips': [
+                {'vip_channel': -1},
+              ],
+            },
+          }),
+          200,
+        ),
+      );
+      await old;
+      expect(api.vipChannels, {2});
+      api.dispose();
+    },
+  );
+  test(
+    'cloud collection matches original endpoint, verbs and video IDs',
+    () async {
+      final seen = <http.Request>[];
+      final api =
+          ClicliApi(
+              client: MockClient((request) async {
+                seen.add(request);
+                return http.Response(
+                  jsonEncode({
+                    'code': 20000,
+                    'data': {
+                      'items': [
+                        {
+                          'id': 999,
+                          'vid': 42,
+                          'name': '收藏',
+                          'pic': 'https://example.com/cover.jpg',
+                        },
+                      ],
+                      'total': 25,
+                    },
+                  }),
+                  200,
+                  headers: {'content-type': 'application/json; charset=utf-8'},
+                );
+              }),
+            )
+            ..host = 'https://example.com'
+            ..token = 'fixture';
+      await api.loadProtocol();
+      final page = await api.accountFavorites(page: 2);
+      expect(seen.last.method, 'GET');
+      expect(seen.last.url.path, '/pc/collect');
+      expect(seen.last.url.queryParameters, {'page': '2', 'limit': '24'});
+      expect(page.items.single.id, 42);
+      expect(page.total, 25);
+      await api.setAccountFavorite(42, collected: true);
+      expect(seen.last.method, 'POST');
+      expect(decryptRequest(seen.last.body), {'vid': 42});
+      await api.setAccountFavorite(42, collected: false);
+      expect(seen.last.method, 'DELETE');
+      expect(seen.last.url.path, '/pc/collect');
+      expect(decryptRequest(seen.last.body), {'vid': 42});
+      expect(
+        seen.last.headers['X-Token'] ?? seen.last.headers['x-token'],
+        'fixture',
+      );
+      api.dispose();
+    },
+  );
+  test(
+    'detail parses the original account resume fields without persisting them locally',
+    () {
+      final anime = Anime.fromJson({
+        'id': 42,
+        'name': '测试',
+        'history': {
+          'player': 'mao',
+          'part': '第02集',
+          'time_point': 87,
+          'updated_at': '2026-10-04T10:00:00+08:00',
+        },
+      });
+      final watch = anime.accountResume!.entry(anime);
+      expect(watch.source, 'mao');
+      expect(watch.episode, '第02集');
+      expect(watch.position, 87);
+      expect(watch.updated, isNotNull);
+      expect(anime.toJson().containsKey('history'), false);
+      expect(Anime.fromJson({'history': {}}).accountResume, isNull);
+    },
+  );
   test(
     'encrypted login, registration and code requests match original fields',
     () async {
